@@ -1,12 +1,22 @@
 import streamlit as st
 import yfinance as yf
 import pandas as pd
+from datetime import datetime
+import pytz # Indian Timezone ke liye
 
-# 1. PAGE CONFIGURATION (Web Page ki Settings)
+# 1. PAGE CONFIGURATION
 st.set_page_config(page_title="Indian Market Smart Analyzer", page_icon="📊", layout="centered")
 
 st.title("📊 Indian Market Smart Predictor Tool")
 st.markdown("Yeh web tool algorithm aur live news ke aadhar par market ka mood (Bullish/Bearish %) batata hai.")
+
+# --- LIVE DATE & TIME SECTION ---
+# Indian Standard Time (IST) zone set karna
+IST = pytz.timezone('Asia/Kolkata')
+current_time = datetime.now(IST).strftime('%Y-%m-%d  |  %I:%M:%S %p')
+
+# Web page par date aur time display karna
+st.info(f"📅 **Current Indian Time (IST):** {current_time}")
 st.markdown("---")
 
 # RSI Calculation Function
@@ -17,8 +27,7 @@ def calculate_rsi(series, period=14):
     rs = gain / (loss + 1e-9)
     return 100 - (100 / (1 + rs))
 
-# 2. WEB USER INTERFACE (Dropdown aur Input)
-# Aap list mein aur bhi stocks jod sakte hain
+# 2. WEB USER INTERFACE
 popular_stocks = {
     "Nifty 50 Index": "^NSEI",
     "Bank Nifty Index": "^NSEBANK",
@@ -32,7 +41,6 @@ popular_stocks = {
 selected_stock_name = st.selectbox("Apna Stock ya Index Chune:", list(popular_stocks.keys()))
 ticker_symbol = popular_stocks[selected_stock_name]
 
-# Custom Input Box agar user ko koi aur stock search karna ho
 custom_ticker = st.text_input("Ya phir koi dusra NSE Ticker daalein (e.g., TATASTEEL.NS):", "")
 if custom_ticker:
     ticker_symbol = custom_ticker.upper()
@@ -45,7 +53,7 @@ if st.button("📊 Live Market Analysis Karein"):
             df = stock.history(period="60d")
             
             if df.empty or len(df) < 20:
-                st.error(f"❌ '{ticker_symbol}' ka data nahi mila. Kripya sahi ticker daalein (Jaise: INFY.NS)")
+                st.error(f"❌ '{ticker_symbol}' ka data nahi mila. Kripya sahi ticker daalein.")
             else:
                 # ALGORITHM CALCULATIONS
                 df['SMA_20'] = df['Close'].rolling(window=20).mean()
@@ -53,13 +61,11 @@ if st.button("📊 Live Market Analysis Karein"):
                 df['RSI'] = calculate_rsi(df['Close'], period=14)
                 
                 latest_close = df['Close'].iloc[-1]
-                sma_20 = df['SMA_20'].iloc[-1]
-                sma_50 = df['SMA_50'].iloc[-1]
                 rsi = df['RSI'].iloc[-1]
                 
                 bullish_signals = 0
-                if latest_close > sma_20: bullish_signals += 1
-                if sma_20 > sma_50: bullish_signals += 1
+                if latest_close > df['SMA_20'].iloc[-1]: bullish_signals += 1
+                if df['SMA_20'].iloc[-1] > df['SMA_50'].iloc[-1]: bullish_signals += 1
                 if rsi > 50: bullish_signals += 1
 
                 algo_bullish_pct = (bullish_signals / 3) * 100
