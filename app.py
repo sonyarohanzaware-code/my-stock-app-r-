@@ -1,127 +1,123 @@
-import streamlit as st
-import yfinance as yf
+import numpy as np
 import pandas as pd
-from datetime import datetime
-import pytz # Indian Timezone ke liye
+from scipy.stats import norm
+from sklearn.ensemble import RandomForestClassifier
+import streamlit as st
 
-# 1. PAGE CONFIGURATION
-st.set_page_config(page_title="Indian Market Smart Analyzer", page_icon="📊", layout="centered")
+# ==========================================
+# 1. MATHEMATICAL MODEL (Black-Scholes Formula)
+# ==========================================
+def calculate_black_scholes(S, K, T, r, sigma, option_type="call"):
+    """
+    S: Underlying Price (Nifty Spot)
+    K: Strike Price
+    T: Time to expiration in years (e.g., 5 days = 5/365)
+    r: Risk-free interest rate (e.g., 0.07 for 7%)
+    sigma: Implied Volatility (IV) (e.g., 0.15 for 15%)
+    """
+    if T <= 0:
+        return (max(0.0, S - K) if option_type == "call" else max(0.0, K - S)), 0, 0, 0
+    
+    d1 = (np.log(S / K) + (r + 0.5 * sigma ** 2) * T) / (sigma * np.sqrt(T))
+    d2 = d1 - sigma * np.sqrt(T)
+    
+    if option_type == "call":
+        price = S * norm.cdf(d1) - K * np.exp(-r * T) * norm.cdf(d2)
+        delta = norm.cdf(d1)
+        theta = (- (S * norm.pdf(d1) * sigma) / (2 * np.sqrt(T)) 
+                 - r * K * np.exp(-r * T) * norm.cdf(d2)) / 365
+    else: # put option
+        price = K * np.exp(-r * T) * norm.cdf(-d2) - S * norm.cdf(-d1)
+        delta = norm.cdf(d1) - 1
+        theta = (- (S * norm.pdf(d1) * sigma) / (2 * np.sqrt(T)) 
+                 + r * K * np.exp(-r * T) * norm.cdf(-d2)) / 365
+        
+    gamma = norm.pdf(d1) / (S * sigma * np.sqrt(T))
+    vega = (S * np.sqrt(T) * norm.pdf(d1)) / 100 # per 1% change in IV
+    
+    return round(price, 2), round(delta, 3), round(gamma, 4), round(theta, 2), round(vega, 2)
 
-st.title("📊 Indian Market Smart Predictor Tool")
-st.markdown("Yeh web tool algorithm aur live news ke aadhar par market ka mood (Bullish/Bearish %) batata hai.")
+# ==========================================
+# 2. AI SMARTNESS ENGINE (Predictive Machine Learning)
+# ==========================================
+def generate_ai_signals(data):
+    """
+    Historical data parameters aur features par predictive AI signals generate karta hai.
+    """
+    # Feature Engineering
+    data['Price_Change'] = data['Close'].pct_change()
+    data['IV_Change'] = data['IV'].pct_change()
+    data['PCR_Change'] = data['PCR'].pct_change()
+    data.dropna(inplace=True)
+    
+    # Target Variable: Agar agle din premium badha to 1 (Buy), nahi to 0
+    data['Target'] = np.where(data['Close'].shift(-1) > data['Close'], 1, 0)
+    
+    # Train/Test Split logic for AI model
+    X = data[['Price_Change', 'IV_Change', 'PCR_Change']]
+    y = data['Target']
+    
+    if len(data) < 10: # Safe check if data is low
+        return "HOLD (Insufficient Data for AI)"
+        
+    model = RandomForestClassifier(n_estimators=50, random_state=42)
+    model.fit(X[:-1], y[:-1]) # training except last row
+    
+    # Latest live row par prediction
+    last_row = X.iloc[[-1]]
+    prediction = model.predict(last_row)[0]
+    probability = model.predict_proba(last_row)[0][prediction]
+    
+    return "BUY CALL / SELL PUT" if prediction == 1 else "BUY PUT / SELL CALL", round(probability * 100, 2)
 
-# --- LIVE DATE & TIME SECTION ---
-# Indian Standard Time (IST) zone set karna
-IST = pytz.timezone('Asia/Kolkata')
-current_time = datetime.now(IST).strftime('%Y-%m-%d  |  %I:%M:%S %p')
-
-# Web page par date aur time display karna
-st.info(f"📅 **Current Indian Time (IST):** {current_time}")
+# ==========================================
+# 3. WEB INTERFACE / WEB APP INTEGRATION
+# ==========================================
+st.set_page_config(page_title="Nifty 50 Advance Algo Suite", layout="wide")
+st.title("🎯 Nifty 50 Smart Option Trading Algorithm Suite")
 st.markdown("---")
 
-# RSI Calculation Function
-def calculate_rsi(series, period=14):
-    delta = series.diff()
-    gain = (delta.where(delta > 0, 0)).rolling(window=period).mean()
-    loss = (-delta.where(delta < 0, 0)).rolling(window=period).mean()
-    rs = gain / (loss + 1e-9)
-    return 100 - (100 / (1 + rs))
+# Sidebar Controls for Real-time Data Input
+st.sidebar.header("📥 Live Market Input Variables")
+nifty_spot = st.sidebar.number_input("Nifty 50 Spot Price", value=24300.0, step=0.5)
+strike_price = st.sidebar.number_input("Strike Price (K)", value=24300.0, step=50.0)
+days_to_expiry = st.sidebar.slider("Days to Expiry", min_value=0, max_value=30, value=4)
+iv = st.sidebar.slider("Implied Volatility (IV %)", min_value=5.0, max_value=80.0, value=14.5) / 100
+option_type = st.sidebar.selectbox("Option Type", ["call", "put"])
 
-# 2. WEB USER INTERFACE
-popular_stocks = {
-    "Nifty 50 Index": "^NSEI",
-    "Bank Nifty Index": "^NSEBANK",
-    "Reliance Industries": "RELIANCE.NS",
-    "Tata Motors": "TATAMOTORS.NS",
-    "TCS": "TCS.NS",
-    "State Bank of India (SBI)": "SBIN.NS",
-    "HDFC Bank": "HDFCBANK.NS"
-}
+# Mathematical Calculations Execution
+T = days_to_expiry / 365
+r = 0.07 # 7% Risk-Free Rate in India
 
-selected_stock_name = st.selectbox("Apna Stock ya Index Chune:", list(popular_stocks.keys()))
-ticker_symbol = popular_stocks[selected_stock_name]
+price, delta, gamma, theta, vega = calculate_black_scholes(nifty_spot, strike_price, T, r, iv, option_type)
 
-custom_ticker = st.text_input("Ya phir koi dusra NSE Ticker daalein (e.g., TATASTEEL.NS):", "")
-if custom_ticker:
-    ticker_symbol = custom_ticker.upper()
+# Dummy dataset for AI analysis simulation (Live market me isse database se fill karein)
+simulated_data = pd.DataFrame({
+    'Close': [120, 125, 118, 130, 128, 135, 142, 139, 145, price],
+    'IV': [0.14, 0.142, 0.145, 0.138, 0.141, 0.144, 0.146, 0.142, 0.143, iv],
+    'PCR': [0.9, 0.95, 0.92, 1.05, 1.01, 1.10, 1.15, 1.12, 1.18, 1.14]
+})
+ai_signal, confidence = generate_ai_signals(simulated_data)
 
-# 3. ANALYSIS BUTTON
-if st.button("📊 Live Market Analysis Karein"):
-    with st.spinner('Live market data fetch ho raha hai...'):
-        try:
-            stock = yf.Ticker(ticker_symbol)
-            df = stock.history(period="60d")
-            
-            if df.empty or len(df) < 20:
-                st.error(f"❌ '{ticker_symbol}' ka data nahi mila. Kripya sahi ticker daalein.")
-            else:
-                # ALGORITHM CALCULATIONS
-                df['SMA_20'] = df['Close'].rolling(window=20).mean()
-                df['SMA_50'] = df['Close'].rolling(window=50).mean()
-                df['RSI'] = calculate_rsi(df['Close'], period=14)
-                
-                latest_close = df['Close'].iloc[-1]
-                rsi = df['RSI'].iloc[-1]
-                
-                bullish_signals = 0
-                if latest_close > df['SMA_20'].iloc[-1]: bullish_signals += 1
-                if df['SMA_20'].iloc[-1] > df['SMA_50'].iloc[-1]: bullish_signals += 1
-                if rsi > 50: bullish_signals += 1
+# Layout Design for Web Display
+col1, col2 = st.columns(2)
 
-                algo_bullish_pct = (bullish_signals / 3) * 100
-                algo_bearish_pct = 100 - algo_bullish_pct
+with col1:
+    st.subheader("📊 Mathematical Valuation & Option Greeks")
+    st.metric(label=f"Theoretical Premium ({option_type.upper()})", value=f"₹ {price}")
+    
+    greeks_df = pd.DataFrame({
+        "Greek": ["Delta (Directional Sensitivity)", "Gamma (Delta Acceleration)", "Theta (Time Decay / Day)", "Vega (Volatility Sensitivity)"],
+        "Value": [delta, gamma, theta, vega]
+    })
+    st.table(greeks_df)
 
-                # NEWS SENTIMENT ANALYSIS
-                news_list = stock.news
-                news_bullish_pct, news_bearish_pct = 50.0, 50.0
-                
-                bullish_keywords = ['growth', 'profit', 'rise', 'buy', 'bull', 'gain', 'high', 'deal', 'hike', 'bonus']
-                bearish_keywords = ['fall', 'drop', 'loss', 'sell', 'bear', 'slump', 'down', 'crash', 'risk', 'fine']
+with col2:
+    st.subheader("🤖 AI Smartness & Trend Prediction")
+    st.info(f"**AI Core System Signal:** {ai_signal}")
+    st.metric(label="AI Signal Confidence Strength", value=f"{confidence}%")
+    
+    st.warning("⚠️ **Risk Alert:** Time decay (Theta) is losing **₹ " + str(abs(theta)) + "** per day. Adjust your position positioning accordingly.")
 
-                if news_list:
-                    news_score = 0
-                    for article in news_list[:5]:
-                        title = article.get('title', '').lower()
-                        for word in bullish_keywords:
-                            if word in title: news_score += 1
-                        for word in bearish_keywords:
-                            if word in title: news_score -= 1
-                            
-                    if news_score > 0:
-                        news_bullish_pct, news_bearish_pct = 75.0, 25.0
-                    elif news_score < 0:
-                        news_bullish_pct, news_bearish_pct = 25.0, 75.0
-
-                # FINAL WEIGHTED SCORE
-                final_bullish = (algo_bullish_pct * 0.60) + (news_bullish_pct * 0.40)
-                final_bearish = (algo_bearish_pct * 0.60) + (news_bearish_pct * 0.40)
-
-                # SHOW METRICS ON WEB
-                col1, col2, col3 = st.columns(3)
-                col1.metric("Live Price", f"₹{latest_close:.2f}")
-                col2.metric("RSI (Momentum)", f"{rsi:.2f}")
-                col3.metric("News Scanned", f"{len(news_list) if news_list else 0} Articles")
-
-                st.markdown("---")
-                
-                # SHOW FINAL PERCENTAGE WITH BEAUTIFUL BARS
-                st.subheader("📊 Market Direction Percentage")
-                
-                st.write(f"🟢 **BULLISH (Tezi): {final_bullish:.2f}%**")
-                st.progress(int(final_bullish))
-                
-                st.write(f"🔴 **BEARISH (Mandi): {final_bearish:.2f}%**")
-                st.progress(int(final_bearish))
-                
-                st.markdown("---")
-                
-                # CONCLUSION BOX
-                if abs(final_bullish - final_bearish) < 5:
-                    st.warning("⚖️ **MARKET MOMENTUM: NEUTRAL** (Market ek range mein reh sakta hai)")
-                elif final_bullish > final_bearish:
-                    st.success("📈 **MARKET MOMENTUM: STRONG BULLISH** (Tezi ka jhukaav zyada hai)")
-                else:
-                    st.error("📉 **MARKET MOMENTUM: STRONG BEARISH** (Mandi ka jhukaav zyada hai)")
-
-        except Exception as e:
-            st.error(f"Data load karne mein dikkat aayi: {e}")
+st.markdown("---")
+st.caption("Developed for High-Frequency Web Integration. Powered by Black-Scholes and Random Forest Classification Algorithms.")
