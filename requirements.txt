@@ -1,13 +1,5 @@
-# --- Mathematical & Data Processing Libraries ---
 numpy>=1.24.0
 pandas>=2.0.0
 scipy>=1.10.0
-
-# --- AI & Machine Learning Engine ---
 scikit-learn>=1.2.0
-
-# --- Web Interface & Dashboard Framework ---
 streamlit>=1.25.0
-
-# --- Indian Market Integration Tool (Optional for live data) ---
-nsepython>=0.0.1
