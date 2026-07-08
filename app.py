@@ -2,11 +2,14 @@ import numpy as np
 import pandas as pd
 from scipy.stats import norm
 import streamlit as st
+import plotly.graph_objects as go
 
-# Mathematical Engine for Option Chain Analysis
+# ==========================================
+# 1. MATHEMATICAL OPTION ENGINE
+# ==========================================
 def calculate_bs_greeks(S, K, T, r, sigma, option_type="call"):
     if T <= 0:
-        return (max(0.0, S - K) if option_type == "call" else max(0.0, K - S)), 0, 0
+        return (max(0.0, S - K) if option_type == "call" else max(0.0, K - S)), 0.0, 0.0
     
     d1 = (np.log(S / K) + (r + 0.5 * sigma ** 2) * T) / (sigma * np.sqrt(T))
     d2 = d1 - sigma * np.sqrt(T)
@@ -21,65 +24,110 @@ def calculate_bs_greeks(S, K, T, r, sigma, option_type="call"):
     theta = (- (S * norm.pdf(d1) * sigma) / (2 * np.sqrt(T))) / 365
     return round(price, 2), round(delta, 2), round(theta, 2)
 
-# Streamlit App Setup
-st.set_page_config(page_title="Zerodha Like Option Chain Predictor", layout="wide")
-st.title("📊 Nifty 50 Pro Option Chain & AI Move Predictor")
+# ==========================================
+# 2. WEB APPLICATION INTERFACE (STYLING)
+# ==========================================
+st.set_page_config(page_title="Nifty Pro Option Chain Engine", layout="wide")
 
-# Inputs
-spot_price = st.sidebar.number_input("Current Nifty Spot Price", value=24300.0, step=50.0)
-iv_ce = st.sidebar.slider("Call Implied Volatility (CE IV %)", 10.0, 50.0, 13.5) / 100
-iv_pe = st.sidebar.slider("Put Implied Volatility (PE IV %)", 10.0, 50.0, 14.0) / 100
-days_to_expiry = st.sidebar.slider("Days to Expiry", 1, 10, 5)
-predicted_move = st.sidebar.slider("Expected Nifty Move (Points)", -300, 300, 100, step=50)
+st.markdown("""
+    <style>
+    .metric-box { background-color: #1e222d; padding: 15px; border-radius: 8px; border: 1px solid #2a2e39; }
+    .reason-box { background-color: #131722; padding: 20px; border-radius: 10px; border-left: 5px solid #2962ff; }
+    </style>
+""", unsafe_with_html=True)
 
-st.subheader(f"⚡ Current Nifty Price: ₹{spot_price} | Predicted Move: {predicted_move} Points")
+st.title("📊 Nifty 50 Full Option Chain & Predictive Core")
 st.markdown("---")
 
+# Sidebar Controllers
+st.sidebar.header("📥 Real-time Market Inputs")
+spot_price = st.sidebar.number_input("Current Nifty Spot Price", value=24300.0, step=50.0)
+pcr_input = st.sidebar.slider("Current PCR (Put-Call Ratio)", 0.5, 1.8, 1.15, step=0.05)
+iv_input = st.sidebar.slider("Market Volatility (IV %)", 8.0, 40.0, 14.2, step=0.1) / 100
+days_to_expiry = st.sidebar.slider("Days to Expiry", 1, 7, 4)
+
+st.sidebar.header("🔮 Prediction Target Setup")
+target_move = st.sidebar.slider("Expected Nifty Move (Points)", -400, 400, 150, step=50)
+
+# Calculations Configurations
 T = days_to_expiry / 365
-r = 0.07 # 7% Risk-Free Rate
+r = 0.07 
+future_spot = spot_price + target_move
 
-# Generate Strikes around ATM (10 Strike Prices Up & Down)
+# ==========================================
+# 3. AI REASONING ENGINE (Kyu Movement Karega?)
+# ==========================================
+st.markdown("### 🤖 Market Trend & Movement Reason Analysis")
+with st.container():
+    # Technical & Mathematical Data Mapping for Logic Building
+    trend = "BULLISH" if target_move > 0 else "BEARISH"
+    
+    # Reason analysis logic building based on PCR and IV
+    if pcr_input > 1.3:
+        pcr_reason = "PCR bohot high hai (>1.3), iska matlab Heavy Put Writing (Support) ho rahi hai. Market niche girna mushkil hai."
+    elif pcr_input < 0.7:
+        pcr_reason = "PCR bohot low hai (<0.7), market Oversold zone me hai ya Heavy Call Writing (Resistance) hai. Upper side par pressure rahega."
+    else:
+        pcr_reason = "PCR neutral range me hai, market data-driven solid breakout ka wait kar raha hai."
+
+    if iv_input * 100 > 18:
+        iv_reason = "IV (Volatility) badhi hui hai, jiski wajah se premiums me bade sharp up/down jumps dekhne ko milenge (High Risk Option Buyers Market)."
+    else:
+        iv_reason = "IV control me hai, market smooth chalega aur option sellers time decay (Theta) ka fayda uthayenge."
+
+    st.markdown(f"""
+    <div class="reason-box">
+        <h4>🎯 Expected View: <span style="color:{'#00ff88' if trend=='BULLISH' else '#ff4a4a'}">{trend} ({target_move} Points Shift Target)</span></h4>
+        <p><b>1. Volume & OI Context (PCR):</b> {pcr_reason}</p>
+        <p><b>2. Premium Speed (Volatility - IV):</b> {iv_reason}</p>
+        <p><b>3. Mathematical Trigger:</b> Agar Nifty <b>₹{spot_price}</b> se <b>₹{future_spot}</b> jata hai, toh niche di gayi Option Chain ke mutabik buyers ka profit aur sellers ka risk calculate kiya gaya hai.</p>
+    </div>
+    """, unsafe_with_html=True)
+
+st.markdown("---")
+
+# ==========================================
+# 4. FULL OPTION CHAIN COMPONENT (ZERODHA STYLE)
+# ==========================================
+st.markdown("### 📋 Complete Interactive Option Chain Table")
+
+# Generate 14 Strike Prices around ATM (7 up, 7 down)
 atm_strike = round(spot_price / 50) * 50
-strikes = [atm_strike + i * 50 for i in range(-5, 6)]
+strikes = [atm_strike + i * 50 for i in range(-7, 8)]
 
-chain_data = []
+chain_list = []
 
 for K in strikes:
-    # Current Calculations
-    c_price, c_delta, c_theta = calculate_bs_greeks(spot_price, K, T, r, iv_ce, "call")
-    p_price, p_delta, p_theta = calculate_bs_greeks(spot_price, K, T, r, iv_pe, "put")
+    # Current Prices & Greeks
+    c_price, c_delta, c_theta = calculate_bs_greeks(spot_price, K, T, r, iv_input, "call")
+    p_price, p_delta, p_theta = calculate_bs_greeks(spot_price, K, T, r, iv_input, "put")
     
-    # Future/Predicted Slices
-    future_spot = spot_price + predicted_move
-    f_c_price, _, _ = calculate_bs_greeks(future_spot, K, T - (1/365), r, iv_ce, "call")
-    f_p_price, _, _ = calculate_bs_greeks(future_spot, K, T - (1/365), r, iv_pe, "put")
+    # Predicted Future Prices (T - 1 day decay added for accuracy)
+    f_c_price, _, _ = calculate_bs_greeks(future_spot, K, max(0, T - (1/365)), r, iv_input, "call")
+    f_p_price, _, _ = calculate_bs_greeks(future_spot, K, max(0, T - (1/365)), r, iv_input, "put")
     
-    # Change Logic
-    ce_change = round(f_c_price - c_price, 2)
-    pe_change = round(f_p_price - p_price, 2)
-    
-    chain_data.append({
+    c_change = round(f_c_price - c_price, 2)
+    p_change = round(f_p_price - p_price, 2)
+
+    chain_list.append({
         "CE Delta": c_delta,
-        "CE Current Premium": f"₹{c_price}",
-        "CE Expected Change": f"+₹{ce_change}" if ce_change >= 0 else f"₹{ce_change}",
+        "CE Expected Premium": f"₹{f_c_price}",
+        "CE Price Change": f"🟢 +₹{c_change}" if c_change >= 0 else f"🔴 ₹{c_change}",
+        "CE LTP": f"₹{c_price}",
         "STRIKE PRICE": K,
-        "PE Expected Change": f"+₹{pe_change}" if pe_change >= 0 else f"₹{pe_change}",
-        "PE Current Premium": f"₹{p_price}",
-        "PE Delta": p_pe_delta if 'p_pe_delta' in locals() else p_delta
+        "PE LTP": f"₹{p_price}",
+        "PE Price Change": f"🟢 +₹{p_change}" if p_change >= 0 else f"🔴 ₹{p_change}",
+        "PE Expected Premium": f"₹{f_p_price}",
+        "PE Delta": p_delta
     })
 
-# Format to DataFrame Grid
-df_chain = pd.DataFrame(chain_data)
+df_chain = pd.DataFrame(chain_list)
 
-# Highlight ATM strike
-def highlight_atm(row):
-    return ['background-color: #2b2b2b' if row['STRIKE PRICE'] == atm_strike else '' for _ in row]
+# Highlight ATM Style Function
+def style_chain(row):
+    color = 'background-color: #1a2a3a' if row['STRIKE PRICE'] == atm_strike else ''
+    return [color] * len(row)
 
-st.dataframe(df_chain.style.apply(highlight_atm, axis=1), use_container_width=True)
+st.dataframe(df_chain.style.apply(style_chain, axis=1), use_container_width=True, height=550)
 
-# Risk & Directional Analysis 
-st.markdown("### 🎯 Algorithmic Prediction Analysis:")
-if predicted_move > 0:
-    st.success(f"📈 Nifty **{predicted_move} points up** jaane par, Call options ka premium tezi se badhega (sabse jyada impact Deep ITM Calls par hoga). Short sellers ko PE buy ya CE sell se exit karna chahiye.")
-else:
-    st.error(f"📉 Nifty **{abs(predicted_move)} points down** jaane par, Put options ka premium tezi se badhega (Deep ITM Puts me strong gain hoga).")
+st.info("💡 **Aasan Bhasha Me Samjhein:** Agar Nifty aapke direction me move karega, toh jis contract ka **Delta** jitna zyada hoga (jaise 0.70 ya 0.80), uska premium utni hi bullet speed se badhega!")
