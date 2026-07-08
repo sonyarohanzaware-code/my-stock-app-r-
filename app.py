@@ -4,11 +4,13 @@ from scipy.stats import norm
 import streamlit as st
 
 # ==========================================
-# 1. MATHEMATICAL OPTION ENGINE
+# 1. MATHEMATICAL OPTION ENGINE (FIXED)
 # ==========================================
 def calculate_bs_greeks(S, K, T, r, sigma, option_type="call"):
+    # If time to expiry is 0 or negative, return intrinsic value
     if T <= 0:
-        return (max(0.0, S - K) if option_type == "call" else max(0.0, K - S)), 0.0, 0.0
+        val = max(0.0, S - K) if option_type == "call" else max(0.0, K - S)
+        return round(val, 2), (1.0 if option_type == "call" else -1.0) if val > 0 else 0.0, 0.0
     
     try:
         d1 = (np.log(S / K) + (r + 0.5 * sigma ** 2) * T) / (sigma * np.sqrt(T))
@@ -21,17 +23,17 @@ def calculate_bs_greeks(S, K, T, r, sigma, option_type="call"):
             price = K * np.exp(-r * T) * norm.cdf(-d2) - S * norm.cdf(-d1)
             delta = norm.cdf(d1) - 1
             
-        theta = (- (S * norm.pdf(d1) * sigma) / (2 * np.sqrt(T))) / 365
-        return round(price, 2), round(delta, 2), round(theta, 2)
+        # Annual Theta converted to Daily Theta
+        theta = (- (S * norm.pdf(d1) * sigma) / (2 * np.sqrt(T)) - r * K * np.exp(-r * T) * norm.cdf(d2 if option_type == "call" else -d2)) / 365
+        return round(max(0.0, price), 2), round(delta, 2), round(theta, 2)
     except Exception:
         return 0.0, 0.0, 0.0
 
 # ==========================================
-# 2. WEB APPLICATION INTERFACE (STYLING FIXED)
+# 2. WEB APPLICATION INTERFACE
 # ==========================================
 st.set_page_config(page_title="Nifty Pro Option Chain Engine", layout="wide")
 
-# Paramter fixed here: unsafe_allow_html=True
 st.markdown("""
     <style>
     .metric-box { background-color: #1e222d; padding: 15px; border-radius: 8px; border: 1px solid #2a2e39; }
@@ -58,7 +60,7 @@ r = 0.07
 future_spot = spot_price + target_move
 
 # ==========================================
-# 3. AI REASONING ENGINE (Kyu Movement Karega?)
+# 3. AI REASONING ENGINE
 # ==========================================
 st.markdown("### 🤖 Market Trend & Movement Reason Analysis")
 
@@ -88,7 +90,7 @@ st.markdown(f"""
 st.markdown("---")
 
 # ==========================================
-# 4. FULL OPTION CHAIN COMPONENT (ZERODHA STYLE)
+# 4. FULL OPTION CHAIN COMPONENT
 # ==========================================
 st.markdown("### 📋 Complete Interactive Option Chain Table")
 
@@ -103,21 +105,26 @@ for K in strikes:
     c_price, c_delta, _ = calculate_bs_greeks(spot_price, K, T, r, iv_input, "call")
     p_price, p_delta, _ = calculate_bs_greeks(spot_price, K, T, r, iv_input, "put")
     
-    # Predicted Future Prices
-    f_c_price, _, _ = calculate_bs_greeks(future_spot, K, max(0.001, T - (1/365)), r, iv_input, "call")
-    f_p_price, _, _ = calculate_bs_greeks(future_spot, K, max(0.001, T - (1/365)), r, iv_input, "put")
+    # Predicted Future Prices (FIXED: Allowed T to drop cleanly to 0)
+    remaining_time = max(0.0, T - (1/365))
+    f_c_price, _, _ = calculate_bs_greeks(future_spot, K, remaining_time, r, iv_input, "call")
+    f_p_price, _, _ = calculate_bs_greeks(future_spot, K, remaining_time, r, iv_input, "put")
     
     c_change = round(f_c_price - c_price, 2)
     p_change = round(f_p_price - p_price, 2)
 
+    # UI Formatting fixes for clean presentation of negative signs
+    c_change_str = f"🟢 +₹{c_change}" if c_change >= 0 else f"🔴 -₹{abs(c_change)}"
+    p_change_str = f"🟢 +₹{p_change}" if p_change >= 0 else f"🔴 -₹{abs(p_change)}"
+
     chain_list.append({
         "CE Delta": c_delta,
         "CE Expected Premium": f"₹{f_c_price}",
-        "CE Price Change": f"🟢 +₹{c_change}" if c_change >= 0 else f"🔴 ₹{c_change}",
+        "CE Price Change": c_change_str,
         "CE LTP": f"₹{c_price}",
         "STRIKE PRICE": K,
         "PE LTP": f"₹{p_price}",
-        "PE Price Change": f"🟢 +₹{p_change}" if p_change >= 0 else f"🔴 ₹{p_change}",
+        "PE Price Change": p_change_str,
         "PE Expected Premium": f"₹{f_p_price}",
         "PE Delta": p_delta
     })
@@ -130,4 +137,4 @@ def style_chain(row):
 
 st.dataframe(df_chain.style.apply(style_chain, axis=1), use_container_width=True, height=550)
 
-st.info("💡 **💡 Quick Tip:** Jab market me aapka direction confirm ho, tab high Delta (0.60+) contracts chunne par premium bohot fast move karta hai.")
+st.info("💡 **Quick Tip:** Jab market me aapka direction confirm ho, tab high Delta (0.60+) contracts chunne par premium bohot fast move karta hai.")
